@@ -1,292 +1,1108 @@
-"""
-CSAM WIP Lots Monitoring Dashboard
------------------------------------
-Run:
-    pip install dash plotly pandas
-    python csam_dashboard.py
+# ============================================================
 
-The app loads:
-    csam_wip_demo.csv
-    csam_machine_demo.csv
+# CSAM WIP LOTS MONITORING DASHBOARD
 
-Replace the demo CSV files with your actual data using the same column names,
-or modify load_data() for your database / Datalyzer / QMS source.
-"""
+# GitHub -> Streamlit Community Cloud
 
+# ============================================================
+ 
 from pathlib import Path
+
 from datetime import datetime
+ 
 import pandas as pd
+
 import plotly.express as px
+
 import plotly.graph_objects as go
 
-from dash import Dash, dcc, html, dash_table, Input, Output
+import streamlit as st
+ 
+ 
+# ============================================================
 
-BASE = Path(__file__).resolve().parent
+# PAGE CONFIG
 
-# -------------------------
-# Theme
-# -------------------------
-BG = "#071018"
-PANEL = "#0D1822"
-PANEL2 = "#101F2C"
-TEXT = "#E8F1F7"
-MUTED = "#8EA4B4"
-CYAN = "#19C7F3"
-GREEN = "#35D07F"
-AMBER = "#FFC857"
-RED = "#FF5A5F"
-GRID = "#203342"
+# ============================================================
+ 
+st.set_page_config(
 
-app = Dash(__name__)
-app.title = "CSAM WIP Lots Monitoring"
+    page_title="CSAM WIP Lots Monitoring",
 
-# -------------------------
-# Data
-# -------------------------
-def load_data():
-    wip = pd.read_csv(BASE / "csam_wip_demo.csv")
-    machines = pd.read_csv(BASE / "csam_machine_demo.csv")
-    wip["age_hr"] = pd.to_numeric(wip["age_hr"], errors="coerce").fillna(0)
-    return wip, machines
+    page_icon="📊",
 
-def card(title, value, subtitle="", accent=CYAN):
-    return html.Div([
-        html.Div(title, style={"color": MUTED, "fontSize": "12px", "fontWeight": "600"}),
-        html.Div(value, style={"color": TEXT, "fontSize": "27px", "fontWeight": "700", "marginTop": "4px"}),
-        html.Div(subtitle, style={"color": accent, "fontSize": "11px", "marginTop": "4px"})
-    ], style={
-        "background": PANEL,
-        "border": f"1px solid {GRID}",
-        "borderLeft": f"4px solid {accent}",
-        "borderRadius": "10px",
-        "padding": "13px 16px",
-        "minHeight": "78px",
-        "boxShadow": "0 5px 18px rgba(0,0,0,.22)"
-    })
+    layout="wide",
 
-def section(title, children):
-    return html.Div([
-        html.Div(title, style={"fontSize": "15px", "fontWeight": "700", "color": TEXT, "marginBottom": "10px"}),
-        children
-    ], style={
-        "background": PANEL,
-        "border": f"1px solid {GRID}",
-        "borderRadius": "10px",
-        "padding": "14px",
-        "boxShadow": "0 5px 18px rgba(0,0,0,.18)"
-    })
+    initial_sidebar_state="collapsed",
 
-# -------------------------
-# Layout
-# -------------------------
-app.layout = html.Div([
-    dcc.Interval(id="refresh", interval=60*1000, n_intervals=0),
-
-    html.Div([
-        html.Div([
-            html.Div("TF AMD", style={"fontWeight": "800", "fontSize": "17px", "color": "#FFFFFF"}),
-            html.Div("QUALITY / PROCESS ENGINEERING", style={"fontSize": "9px", "color": MUTED, "letterSpacing": "1.2px"})
-        ]),
-        html.Div("CSAM WIP LOTS MONITORING", style={"fontSize": "25px", "fontWeight": "800", "color": CYAN, "textAlign": "center"}),
-        html.Div(id="last-update", style={"fontSize": "11px", "color": MUTED, "textAlign": "right"})
-    ], style={
-        "display": "grid",
-        "gridTemplateColumns": "1fr 2fr 1fr",
-        "alignItems": "center",
-        "padding": "12px 20px",
-        "background": "#050B10",
-        "borderBottom": f"1px solid {GRID}"
-    }),
-
-    html.Div([
-        html.Div("Process:", style={"color": MUTED, "fontSize": "12px", "paddingTop": "8px"}),
-        dcc.Dropdown(
-            id="process-filter",
-            options=[{"label": "All CSAM", "value": "ALL"},
-                     {"label": "UP CSAM", "value": "UP CSAM"},
-                     {"label": "Lid CSAM", "value": "Lid CSAM"},
-                     {"label": "DM CSAM", "value": "DM CSAM"}],
-            value="ALL",
-            clearable=False,
-            style={"width": "180px", "color": "#111"}
-        ),
-        html.Div("WIP age alert:", style={"color": MUTED, "fontSize": "12px", "paddingTop": "8px", "marginLeft": "20px"}),
-        dcc.Input(id="age-limit", type="number", value=8, min=1, max=48,
-                  style={"width": "65px", "padding": "7px", "borderRadius": "5px", "border": "1px solid #344B5B"}),
-        html.Div("hours", style={"color": MUTED, "fontSize": "12px", "paddingTop": "8px"})
-    ], style={
-        "display": "flex", "gap": "9px", "alignItems": "center",
-        "padding": "10px 20px", "background": "#09131C"
-    }),
-
-    html.Div(id="kpi-row", style={
-        "display": "grid",
-        "gridTemplateColumns": "repeat(5, 1fr)",
-        "gap": "10px",
-        "padding": "14px 20px 10px"
-    }),
-
-    html.Div([
-        html.Div([
-            section("WIP BY CSAM PROCESS",
-                    dcc.Graph(id="wip-by-process", config={"displayModeBar": False}, style={"height": "260px"}))
-        ]),
-        html.Div([
-            section("MACHINE AVAILABILITY",
-                    dcc.Graph(id="machine-availability", config={"displayModeBar": False}, style={"height": "260px"}))
-        ])
-    ], style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "10px", "padding": "0 20px 10px"}),
-
-    html.Div([
-        html.Div([
-            section("WIP LOTS BEFORE UP CSAM",
-                    dash_table.DataTable(
-                        id="up-table",
-                        columns=[{"name": x, "id": x} for x in ["timestamp","lot","device","package","priority","age_hr"]],
-                        style_table={"overflowX": "auto", "maxHeight": "245px", "overflowY": "auto"},
-                        style_header={"backgroundColor": "#152A39", "color": CYAN, "fontWeight": "700", "fontSize": "11px"},
-                        style_cell={"backgroundColor": PANEL2, "color": TEXT, "border": f"1px solid {GRID}", "fontSize": "10px", "padding": "6px"},
-                        style_data_conditional=[{"if": {"filter_query": "{age_hr} > 8"}, "color": RED, "fontWeight": "700"}]
-                    ))
-        ]),
-        html.Div([
-            section("WIP LOTS BEFORE LID CSAM",
-                    dash_table.DataTable(
-                        id="lid-table",
-                        columns=[{"name": x, "id": x} for x in ["timestamp","lot","device","package","priority","age_hr"]],
-                        style_table={"overflowX": "auto", "maxHeight": "245px", "overflowY": "auto"},
-                        style_header={"backgroundColor": "#152A39", "color": CYAN, "fontWeight": "700", "fontSize": "11px"},
-                        style_cell={"backgroundColor": PANEL2, "color": TEXT, "border": f"1px solid {GRID}", "fontSize": "10px", "padding": "6px"},
-                        style_data_conditional=[{"if": {"filter_query": "{age_hr} > 8"}, "color": RED, "fontWeight": "700"}]
-                    ))
-        ]),
-        html.Div([
-            section("WIP LOTS BEFORE DM CSAM",
-                    dash_table.DataTable(
-                        id="dm-table",
-                        columns=[{"name": x, "id": x} for x in ["timestamp","lot","device","package","priority","age_hr"]],
-                        style_table={"overflowX": "auto", "maxHeight": "245px", "overflowY": "auto"},
-                        style_header={"backgroundColor": "#152A39", "color": CYAN, "fontWeight": "700", "fontSize": "11px"},
-                        style_cell={"backgroundColor": PANEL2, "color": TEXT, "border": f"1px solid {GRID}", "fontSize": "10px", "padding": "6px"},
-                        style_data_conditional=[{"if": {"filter_query": "{age_hr} > 8"}, "color": RED, "fontWeight": "700"}]
-                    ))
-        ])
-    ], style={"display": "grid", "gridTemplateColumns": "1fr 1fr 1fr", "gap": "10px", "padding": "0 20px 10px"}),
-
-    html.Div([
-        html.Div([
-            section("UNAVAILABLE CSAM MACHINES",
-                dash_table.DataTable(
-                    id="machine-table",
-                    columns=[
-                        {"name":"PROCESS","id":"process"},
-                        {"name":"MACHINE","id":"machine"},
-                        {"name":"STATUS","id":"status"},
-                        {"name":"REASON","id":"reason"},
-                        {"name":"LAST UPDATE","id":"last_update"}
-                    ],
-                    style_table={"overflowX":"auto", "maxHeight":"255px", "overflowY":"auto"},
-                    style_header={"backgroundColor":"#152A39","color":CYAN,"fontWeight":"700","fontSize":"10px"},
-                    style_cell={"backgroundColor":PANEL2,"color":TEXT,"border":f"1px solid {GRID}","fontSize":"10px","padding":"6px"},
-                    style_data_conditional=[
-                        {"if":{"filter_query":'{status} = "Unavailable"'},"color":RED,"fontWeight":"700"},
-                        {"if":{"filter_query":'{status} = "Available"'},"color":GREEN}
-                    ]
-                ))
-        ]),
-        html.Div([
-            section("QUALITY CONTROL / ACTION VIEW",
-                html.Div([
-                    html.Div("1. Escalate WIP > age limit to CSAM owner", style={"padding":"9px 0","borderBottom":f"1px solid {GRID}", "color":TEXT}),
-                    html.Div("2. Review unavailable machine reason every shift", style={"padding":"9px 0","borderBottom":f"1px solid {GRID}", "color":TEXT}),
-                    html.Div("3. Prioritize Hot Lot / customer-critical WIP", style={"padding":"9px 0","borderBottom":f"1px solid {GRID}", "color":TEXT}),
-                    html.Div("4. Track machine recovery ETA and containment", style={"padding":"9px 0","color":TEXT}),
-                ], style={"fontSize":"11px"})
-            )
-        ])
-    ], style={"display":"grid","gridTemplateColumns":"2fr 1fr","gap":"10px","padding":"0 20px 20px"}),
-
-], style={"background": BG, "minHeight": "100vh", "fontFamily": "Arial, sans-serif"})
-
-# -------------------------
-# Callback
-# -------------------------
-@app.callback(
-    Output("kpi-row", "children"),
-    Output("wip-by-process", "figure"),
-    Output("machine-availability", "figure"),
-    Output("up-table", "data"),
-    Output("lid-table", "data"),
-    Output("dm-table", "data"),
-    Output("machine-table", "data"),
-    Output("last-update", "children"),
-    Input("refresh", "n_intervals"),
-    Input("process-filter", "value"),
-    Input("age-limit", "value")
 )
-def update_dashboard(_, selected_process, age_limit):
-    wip, machines = load_data()
+ 
+ 
+# ============================================================
 
-    if selected_process != "ALL":
-        wip_view = wip[wip["process"] == selected_process].copy()
-        machine_view = machines[machines["process"] == selected_process].copy()
-    else:
-        wip_view = wip.copy()
-        machine_view = machines.copy()
+# PATH
 
-    total_wip = len(wip_view)
-    aged_wip = int((wip_view["age_hr"] > float(age_limit or 8)).sum())
-    unavailable = int((machine_view["status"] == "Unavailable").sum())
-    total_machines = len(machine_view)
-    availability = 100 * (total_machines - unavailable) / total_machines if total_machines else 0
+# ============================================================
+ 
+BASE = Path(__file__).resolve().parent
+ 
+ 
+# ============================================================
 
-    # KPIs
-    kpis = [
-        card("TOTAL WIP LOTS", total_wip, "lots in CSAM queue", CYAN),
-        card("AGED WIP", aged_wip, f"> {age_limit} hr threshold", RED if aged_wip else GREEN),
-        card("MACHINE AVAILABILITY", f"{availability:.1f}%", f"{total_machines-unavailable}/{total_machines} machines available", GREEN if availability >= 90 else AMBER),
-        card("UNAVAILABLE MACHINES", unavailable, "requires owner action", RED if unavailable else GREEN),
-        card("HOT LOTS", int((wip_view["priority"] == "Hot Lot").sum()), "priority queue", AMBER),
-    ]
+# THEME
 
-    # WIP by process
-    counts = wip_view.groupby("process").size().reset_index(name="WIP")
-    fig1 = px.bar(counts, x="WIP", y="process", orientation="h", text="WIP")
-    fig1.update_traces(marker_color=CYAN, textposition="outside")
+# ============================================================
+ 
+BG = "#071018"
+
+PANEL = "#0D1822"
+
+PANEL2 = "#101F2C"
+
+TEXT = "#E8F1F7"
+
+MUTED = "#8EA4B4"
+
+CYAN = "#19C7F3"
+
+GREEN = "#35D07F"
+
+AMBER = "#FFC857"
+
+RED = "#FF5A5F"
+
+GRID = "#203342"
+ 
+ 
+# ============================================================
+
+# CSS
+
+# ============================================================
+ 
+st.markdown(
+
+    f"""
+<style>
+ 
+    /* Main page */
+
+    .stApp {{
+
+        background-color: {BG};
+
+    }}
+ 
+    .block-container {{
+
+        max-width: 100%;
+
+        padding-top: 1rem;
+
+        padding-bottom: 2rem;
+
+        padding-left: 1.5rem;
+
+        padding-right: 1.5rem;
+
+    }}
+ 
+    /* Header */
+
+    .dashboard-header {{
+
+        display: grid;
+
+        grid-template-columns: 1fr 2fr 1fr;
+
+        align-items: center;
+
+        background: #050B10;
+
+        border: 1px solid {GRID};
+
+        border-radius: 10px;
+
+        padding: 12px 20px;
+
+        margin-bottom: 10px;
+
+    }}
+ 
+    .company-name {{
+
+        color: #FFFFFF;
+
+        font-size: 17px;
+
+        font-weight: 800;
+
+    }}
+ 
+    .company-subtitle {{
+
+        color: {MUTED};
+
+        font-size: 9px;
+
+        letter-spacing: 1.2px;
+
+    }}
+ 
+    .dashboard-title {{
+
+        color: {CYAN};
+
+        font-size: 25px;
+
+        font-weight: 800;
+
+        text-align: center;
+
+    }}
+ 
+    .update-time {{
+
+        color: {MUTED};
+
+        font-size: 11px;
+
+        text-align: right;
+
+    }}
+ 
+    /* KPI cards */
+
+    .kpi-card {{
+
+        background: {PANEL};
+
+        border: 1px solid {GRID};
+
+        border-radius: 10px;
+
+        padding: 13px 16px;
+
+        min-height: 105px;
+
+        box-shadow: 0 5px 18px rgba(0,0,0,.22);
+
+    }}
+ 
+    .kpi-title {{
+
+        color: {MUTED};
+
+        font-size: 12px;
+
+        font-weight: 600;
+
+    }}
+ 
+    .kpi-value {{
+
+        color: {TEXT};
+
+        font-size: 27px;
+
+        font-weight: 700;
+
+        margin-top: 4px;
+
+    }}
+ 
+    .kpi-subtitle {{
+
+        font-size: 11px;
+
+        margin-top: 4px;
+
+    }}
+ 
+    /* Section heading */
+
+    .section-title {{
+
+        color: {TEXT};
+
+        font-size: 15px;
+
+        font-weight: 700;
+
+        margin-top: 8px;
+
+        margin-bottom: 3px;
+
+    }}
+ 
+    /* Action panel */
+
+    .action-panel {{
+
+        background: {PANEL};
+
+        border: 1px solid {GRID};
+
+        border-radius: 10px;
+
+        padding: 14px;
+
+        color: {TEXT};
+
+        font-size: 12px;
+
+        min-height: 240px;
+
+    }}
+ 
+    .action-row {{
+
+        padding: 10px 0;
+
+        border-bottom: 1px solid {GRID};
+
+    }}
+ 
+    /* Dataframe */
+
+    [data-testid="stDataFrame"] {{
+
+        border: 1px solid {GRID};
+
+        border-radius: 8px;
+
+    }}
+ 
+    /* Streamlit labels */
+
+    label {{
+
+        color: {TEXT} !important;
+
+    }}
+ 
+    </style>
+
+    """,
+
+    unsafe_allow_html=True,
+
+)
+ 
+ 
+# ============================================================
+
+# DATA
+
+# ============================================================
+ 
+@st.cache_data(ttl=60)
+
+def load_data():
+ 
+    wip_file = BASE / "csam_wip_demo.csv"
+
+    machine_file = BASE / "csam_machine_demo.csv"
+ 
+    if not wip_file.exists():
+
+        st.error("Missing file: csam_wip_demo.csv")
+
+        st.stop()
+ 
+    if not machine_file.exists():
+
+        st.error("Missing file: csam_machine_demo.csv")
+
+        st.stop()
+ 
+    wip = pd.read_csv(wip_file)
+
+    machines = pd.read_csv(machine_file)
+ 
+    wip["age_hr"] = pd.to_numeric(
+
+        wip["age_hr"],
+
+        errors="coerce"
+
+    ).fillna(0)
+ 
+    return wip, machines
+ 
+ 
+wip, machines = load_data()
+ 
+ 
+# ============================================================
+
+# HEADER
+
+# ============================================================
+ 
+current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+ 
+st.markdown(
+
+    f"""
+<div class="dashboard-header">
+ 
+        <div>
+<div class="company-name">TF AMD</div>
+<div class="company-subtitle">
+
+                QUALITY / PROCESS ENGINEERING
+</div>
+</div>
+ 
+        <div class="dashboard-title">
+
+            CSAM WIP LOTS MONITORING
+</div>
+ 
+        <div class="update-time">
+
+            LIVE DEMO<br>
+
+            Updated {current_time}
+</div>
+ 
+    </div>
+
+    """,
+
+    unsafe_allow_html=True,
+
+)
+ 
+ 
+# ============================================================
+
+# FILTER
+
+# ============================================================
+ 
+filter_col1, filter_col2, filter_col3 = st.columns(
+
+    [2, 1, 6],
+
+    vertical_alignment="bottom"
+
+)
+ 
+with filter_col1:
+ 
+    selected_process = st.selectbox(
+
+        "Process",
+
+        [
+
+            "All CSAM",
+
+            "UP CSAM",
+
+            "Lid CSAM",
+
+            "DM CSAM",
+
+        ],
+
+    )
+ 
+with filter_col2:
+ 
+    age_limit = st.number_input(
+
+        "WIP age alert (hr)",
+
+        min_value=1,
+
+        max_value=48,
+
+        value=8,
+
+        step=1,
+
+    )
+ 
+ 
+# ============================================================
+
+# FILTER DATA
+
+# ============================================================
+ 
+if selected_process != "All CSAM":
+ 
+    wip_view = wip[
+
+        wip["process"] == selected_process
+
+    ].copy()
+ 
+    machine_view = machines[
+
+        machines["process"] == selected_process
+
+    ].copy()
+ 
+else:
+ 
+    wip_view = wip.copy()
+
+    machine_view = machines.copy()
+ 
+ 
+# ============================================================
+
+# KPI CALCULATION
+
+# ============================================================
+ 
+total_wip = len(wip_view)
+ 
+aged_wip = int(
+
+    (wip_view["age_hr"] > float(age_limit)).sum()
+
+)
+ 
+unavailable = int(
+
+    (machine_view["status"] == "Unavailable").sum()
+
+)
+ 
+total_machines = len(machine_view)
+ 
+if total_machines:
+ 
+    availability = (
+
+        100
+
+        * (total_machines - unavailable)
+
+        / total_machines
+
+    )
+ 
+else:
+ 
+    availability = 0
+ 
+ 
+hot_lots = int(
+
+    (wip_view["priority"] == "Hot Lot").sum()
+
+)
+ 
+ 
+# ============================================================
+
+# KPI CARD FUNCTION
+
+# ============================================================
+ 
+def kpi_card(title, value, subtitle, accent):
+ 
+    st.markdown(
+
+        f"""
+<div
+
+            class="kpi-card"
+
+            style="border-left:4px solid {accent};"
+>
+ 
+            <div class="kpi-title">
+
+                {title}
+</div>
+ 
+            <div class="kpi-value">
+
+                {value}
+</div>
+ 
+            <div
+
+                class="kpi-subtitle"
+
+                style="color:{accent};"
+>
+
+                {subtitle}
+</div>
+ 
+        </div>
+
+        """,
+
+        unsafe_allow_html=True,
+
+    )
+ 
+ 
+# ============================================================
+
+# KPI ROW
+
+# ============================================================
+ 
+k1, k2, k3, k4, k5 = st.columns(5)
+ 
+with k1:
+ 
+    kpi_card(
+
+        "TOTAL WIP LOTS",
+
+        total_wip,
+
+        "lots in CSAM queue",
+
+        CYAN,
+
+    )
+ 
+with k2:
+ 
+    kpi_card(
+
+        "AGED WIP",
+
+        aged_wip,
+
+        f"> {age_limit} hr threshold",
+
+        RED if aged_wip else GREEN,
+
+    )
+ 
+with k3:
+ 
+    kpi_card(
+
+        "MACHINE AVAILABILITY",
+
+        f"{availability:.1f}%",
+
+        f"{total_machines - unavailable}/{total_machines} machines available",
+
+        GREEN if availability >= 90 else AMBER,
+
+    )
+ 
+with k4:
+ 
+    kpi_card(
+
+        "UNAVAILABLE MACHINES",
+
+        unavailable,
+
+        "requires owner action",
+
+        RED if unavailable else GREEN,
+
+    )
+ 
+with k5:
+ 
+    kpi_card(
+
+        "HOT LOTS",
+
+        hot_lots,
+
+        "priority queue",
+
+        AMBER,
+
+    )
+ 
+ 
+# ============================================================
+
+# CHART ROW
+
+# ============================================================
+ 
+chart1_col, chart2_col = st.columns(2)
+ 
+ 
+# ============================================================
+
+# WIP BY PROCESS
+
+# ============================================================
+ 
+with chart1_col:
+ 
+    st.markdown(
+
+        '<div class="section-title">WIP BY CSAM PROCESS</div>',
+
+        unsafe_allow_html=True,
+
+    )
+ 
+    counts = (
+
+        wip_view
+
+        .groupby("process")
+
+        .size()
+
+        .reset_index(name="WIP")
+
+    )
+ 
+    fig1 = px.bar(
+
+        counts,
+
+        x="WIP",
+
+        y="process",
+
+        orientation="h",
+
+        text="WIP",
+
+    )
+ 
+    fig1.update_traces(
+
+        marker_color=CYAN,
+
+        textposition="outside",
+
+    )
+ 
     fig1.update_layout(
-        template="plotly_dark", paper_bgcolor=PANEL, plot_bgcolor=PANEL,
-        font={"color": TEXT}, margin={"l":80,"r":35,"t":15,"b":35},
-        xaxis={"gridcolor":GRID, "title":None}, yaxis={"gridcolor":PANEL, "title":None}
-    )
 
-    # Machine availability
-    m = machine_view.groupby(["process","status"]).size().reset_index(name="count")
-    fig2 = px.bar(m, x="process", y="count", color="status", barmode="stack",
-                  color_discrete_map={"Available": GREEN, "Unavailable": RED},
-                  text="count")
+        template="plotly_dark",
+
+        paper_bgcolor=PANEL,
+
+        plot_bgcolor=PANEL,
+
+        font={"color": TEXT},
+
+        margin={
+
+            "l": 80,
+
+            "r": 35,
+
+            "t": 15,
+
+            "b": 35,
+
+        },
+
+        height=270,
+
+        xaxis={
+
+            "gridcolor": GRID,
+
+            "title": None,
+
+        },
+
+        yaxis={
+
+            "gridcolor": PANEL,
+
+            "title": None,
+
+        },
+
+    )
+ 
+    st.plotly_chart(
+
+        fig1,
+
+        use_container_width=True,
+
+        config={
+
+            "displayModeBar": False
+
+        },
+
+    )
+ 
+ 
+# ============================================================
+
+# MACHINE AVAILABILITY
+
+# ============================================================
+ 
+with chart2_col:
+ 
+    st.markdown(
+
+        '<div class="section-title">MACHINE AVAILABILITY</div>',
+
+        unsafe_allow_html=True,
+
+    )
+ 
+    m = (
+
+        machine_view
+
+        .groupby(
+
+            [
+
+                "process",
+
+                "status",
+
+            ]
+
+        )
+
+        .size()
+
+        .reset_index(name="count")
+
+    )
+ 
+    fig2 = px.bar(
+
+        m,
+
+        x="process",
+
+        y="count",
+
+        color="status",
+
+        barmode="stack",
+
+        color_discrete_map={
+
+            "Available": GREEN,
+
+            "Unavailable": RED,
+
+        },
+
+        text="count",
+
+    )
+ 
     fig2.update_layout(
-        template="plotly_dark", paper_bgcolor=PANEL, plot_bgcolor=PANEL,
-        font={"color": TEXT}, margin={"l":40,"r":20,"t":15,"b":35},
-        xaxis={"gridcolor":PANEL}, yaxis={"gridcolor":GRID, "title":None},
-        legend={"orientation":"h","y":1.12}
+
+        template="plotly_dark",
+
+        paper_bgcolor=PANEL,
+
+        plot_bgcolor=PANEL,
+
+        font={"color": TEXT},
+
+        margin={
+
+            "l": 40,
+
+            "r": 20,
+
+            "t": 15,
+
+            "b": 35,
+
+        },
+
+        height=270,
+
+        xaxis={
+
+            "gridcolor": PANEL
+
+        },
+
+        yaxis={
+
+            "gridcolor": GRID,
+
+            "title": None,
+
+        },
+
+        legend={
+
+            "orientation": "h",
+
+            "y": 1.12,
+
+        },
+
     )
+ 
+    st.plotly_chart(
 
-    # Tables
-    def table_data(process):
-        cols = ["timestamp","lot","device","package","priority","age_hr"]
-        df = wip_view[wip_view["process"] == process].sort_values("age_hr", ascending=False).head(15).copy()
-        if df.empty:
-            return []
-        df["age_hr"] = df["age_hr"].round(1)
-        return df[cols].to_dict("records")
+        fig2,
 
-    unavailable_rows = machine_view.sort_values(["status","process"], ascending=[True, True])
-    return (
-        kpis, fig1, fig2,
-        table_data("UP CSAM"), table_data("Lid CSAM"), table_data("DM CSAM"),
-        unavailable_rows.to_dict("records"),
-        "LIVE DEMO • Updated " + datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        use_container_width=True,
+
+        config={
+
+            "displayModeBar": False
+
+        },
+
     )
+ 
+ 
+# ============================================================
 
-if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=8050)
+# TABLE FUNCTION
+
+# ============================================================
+ 
+def get_process_table(process):
+ 
+    cols = [
+
+        "timestamp",
+
+        "lot",
+
+        "device",
+
+        "package",
+
+        "priority",
+
+        "age_hr",
+
+    ]
+ 
+    df = (
+
+        wip_view[
+
+            wip_view["process"] == process
+
+        ]
+
+        .sort_values(
+
+            "age_hr",
+
+            ascending=False
+
+        )
+
+        .head(15)
+
+        .copy()
+
+    )
+ 
+    if df.empty:
+
+        return pd.DataFrame(columns=cols)
+ 
+    df["age_hr"] = df["age_hr"].round(1)
+ 
+    return df[cols]
+ 
+ 
+# ============================================================
+
+# WIP TABLES
+
+# ============================================================
+ 
+t1, t2, t3 = st.columns(3)
+ 
+with t1:
+ 
+    st.markdown(
+
+        '<div class="section-title">WIP LOTS BEFORE UP CSAM</div>',
+
+        unsafe_allow_html=True,
+
+    )
+ 
+    st.dataframe(
+
+        get_process_table("UP CSAM"),
+
+        use_container_width=True,
+
+        hide_index=True,
+
+        height=270,
+
+    )
+ 
+with t2:
+ 
+    st.markdown(
+
+        '<div class="section-title">WIP LOTS BEFORE LID CSAM</div>',
+
+        unsafe_allow_html=True,
+
+    )
+ 
+    st.dataframe(
+
+        get_process_table("Lid CSAM"),
+
+        use_container_width=True,
+
+        hide_index=True,
+
+        height=270,
+
+    )
+ 
+with t3:
+ 
+    st.markdown(
+
+        '<div class="section-title">WIP LOTS BEFORE DM CSAM</div>',
+
+        unsafe_allow_html=True,
+
+    )
+ 
+    st.dataframe(
+
+        get_process_table("DM CSAM"),
+
+        use_container_width=True,
+
+        hide_index=True,
+
+        height=270,
+
+    )
+ 
+ 
+# ============================================================
+
+# BOTTOM ROW
+
+# ============================================================
+ 
+machine_col, action_col = st.columns([2, 1])
+ 
+ 
+# ============================================================
+
+# MACHINE TABLE
+
+# ============================================================
+ 
+with machine_col:
+ 
+    st.markdown(
+
+        '<div class="section-title">UNAVAILABLE CSAM MACHINES</div>',
+
+        unsafe_allow_html=True,
+
+    )
+ 
+    machine_display = (
+
+        machine_view
+
+        .sort_values(
+
+            ["status", "process"],
+
+            ascending=[
+
+                True,
+
+                True,
+
+            ],
+
+        )
+
+        .copy()
+
+    )
+ 
+    st.dataframe(
+
+        machine_display,
+
+        use_container_width=True,
+
+        hide_index=True,
+
+        height=250,
+
+    )
+ 
+ 
+# ============================================================
+
+# ACTION VIEW
+
+# ============================================================
+ 
+with action_col:
+ 
+    st.markdown(
+
+        '<div class="section-title">QUALITY CONTROL / ACTION VIEW</div>',
+
+        unsafe_allow_html=True,
+
+    )
+ 
+    st.markdown(
+
+        f"""
+<div class="action-panel">
+ 
+            <div class="action-row">
+
+                1. Escalate WIP &gt; {age_limit} hr to CSAM owner
+</div>
+ 
+            <div class="action-row">
+
+                2. Review unavailable machine reason every shift
+</div>
+ 
+            <div class="action-row">
+
+                3. Prioritize Hot Lot / customer-critical WIP
+</div>
+ 
+            <div style="padding:10px 0;">
+
+                4. Track machine recovery ETA and containment
+</div>
+ 
+        </div>
+
+        """,
+
+        unsafe_allow_html=True,
+
+    )
+ 
