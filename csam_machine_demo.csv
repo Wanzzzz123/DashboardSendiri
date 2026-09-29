@@ -1,0 +1,18 @@
+process,machine,status,reason,last_update
+UP CSAM,UP-01,Available,,2026-09-29 02:33
+UP CSAM,UP-02,Available,,2026-09-29 02:23
+UP CSAM,UP-03,Unavailable,Machine unavailable – process qualification,2026-09-29 02:16
+UP CSAM,UP-04,Available,,2026-09-29 02:01
+UP CSAM,UP-05,Available,,2026-09-29 01:24
+UP CSAM,UP-06,Available,,2026-09-29 02:08
+UP CSAM,UP-07,Available,,2026-09-29 01:07
+UP CSAM,UP-08,Available,,2026-09-29 02:48
+Lid CSAM,LID-01,Available,,2026-09-29 02:58
+Lid CSAM,LID-02,Unavailable,Machine unavailable – waiting for engineering,2026-09-29 01:07
+Lid CSAM,LID-03,Unavailable,Machine unavailable – alarm,2026-09-29 01:07
+Lid CSAM,LID-04,Unavailable,Machine unavailable – PM,2026-09-29 02:06
+Lid CSAM,LID-05,Available,,2026-09-29 01:24
+DM CSAM,DM-01,Unavailable,Machine unavailable – alarm,2026-09-29 02:58
+DM CSAM,DM-02,Available,,2026-09-29 01:30
+DM CSAM,DM-03,Unavailable,Machine unavailable – PM,2026-09-29 02:05
+DM CSAM,DM-04,Unavailable,Machine unavailable – alarm,2026-09-29 02:43
